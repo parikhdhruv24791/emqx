@@ -1653,15 +1653,21 @@ end}.
                         lists:zip([Topic || {_, Topic} <- lists:sort([{I, Topic} || {[_, _, "subscription", I, "topic"], Topic} <- Configs])],
                                   [QoS || {_, QoS} <- lists:sort([{I, QoS} || {[_, _, "subscription", I, "qos"], QoS} <- Configs])])
                     end,
+    IsNodeAddr = fun(Addr) ->
+                      case string:tokens(Addr, "@") of
+                          [_NodeName, _Hostname] -> true;
+                           _ -> false
+                      end
+                 end,
     ConnMod = fun(Name) ->
                       [Addr] = cuttlefish_variable:filter_by_prefix("bridge." ++ Name ++ ".address", Conf),
                       Subs = Subscriptions(Name),
-                      case string:tokens(Addr, "@") of
-                          [_NodeName, _Hostname] when Subs =/= [] ->
+                      case IsNodeAddr(Addr) of
+                          true when Subs =/= [] ->
                               error({"subscriptions are not supported when bridging between emqx nodes", Name, Subs});
-                          [_NodeName, _hostname] ->
+                          true ->
                               emqx_portal_rpc;
-                           _ ->
+                          false ->
                               emqx_portal_mqtt
                       end
               end,
@@ -1670,6 +1676,12 @@ end}.
         fun Tr(queue, Q, Cfg) ->
                 NewQ = maps:fold(Tr, #{}, Q),
                 Cfg#{queue => NewQ};
+            Tr(address, Addr0, Cfg) ->
+                Addr = case IsNodeAddr(Addr0) of
+                           true -> list_to_atom(Addr0);
+                           false -> Addr0
+                       end,
+                Cfg#{address => Addr};
             Tr(batch_size, Count, Cfg) ->
                 Cfg#{batch_count_limit => Count};
             Tr(reconnect_interval, Ms, Cfg) ->

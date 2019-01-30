@@ -156,7 +156,12 @@ flush(Msgs) ->
     end.
 
 bridge_conf() ->
-    [].
+    [ {local_rpc,
+        [{connect_module, emqx_portal_rpc},
+         {address, node()},
+         {forwards, ["portal-1/#", "portal-2/#"]}
+        ]}
+    ].
     % [{aws,
     %   [{connect_module, emqx_portal_mqtt},
     %   {username,"user"},

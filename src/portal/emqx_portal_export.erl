@@ -72,7 +72,7 @@
 %% max_inflight_batches: Max number of batches allowed to send-ahead before
 %%      receiving confirmation from remote node/cluster
 %% mountpoint: The topic mount point for messages sent to remote node/cluster
-%%      'default' or <<>> to indicate none
+%%      `undefined', `<<>>' or `""' to disalble
 %% forwards: Local topics to subscribe.
 %% queue.batch_bytes_limit: Max number of bytes to collect in a batch for each
 %%      send call towards emqx_portal_connect
@@ -80,6 +80,9 @@
 %%      each send call towards eqmx_portal_connect
 %% queue.replayq_dir: Directory where replayq should persist messages
 %% queue.replayq_seg_bytes: Size in bytes for each replqyq segnment file
+%%
+%% Find more connection specific configs in the callback modules
+%% of emqx_portal_connect behaviour.
 start_link(Name, Config) when is_list(Config) ->
     start_link(Name, maps:from_list(Config));
 start_link(Name, Config) ->
@@ -91,14 +94,15 @@ callback_mode() -> [state_functions, state_enter].
 init(Config) ->
     erlang:process_flag(trap_exit, true),
     Get = fun(K, D) -> maps:get(K, Config, D) end,
-    QCfg = maps:get(queue, Config),
+    QCfg = maps:get(queue, Config, #{}),
     GetQ = fun(K, D) -> maps:get(K, QCfg, D) end,
+    Dir = GetQ(replayq_dir, undefined),
     QueueConfig =
-        case GetQ(replayq_dir, undefned) of
-            undefined -> #{mem_only => true};
-            Dir -> #{dir => Dir,
-                     seg_bytes => GetQ(replayq_seg_bytes, ?DEFAULT_SEG_BYTES)
-                    }
+        case Dir =:= undefined orelse Dir =:= "" of
+            true -> #{mem_only => true};
+            false -> #{dir => Dir,
+                       seg_bytes => GetQ(replayq_seg_bytes, ?DEFAULT_SEG_BYTES)
+                      }
         end,
     Queue = replayq:open(QueueConfig#{sizer => fun emqx_portal_msg:estimate_size/1,
                                       marshaller => fun msg_marshaller/1}),
@@ -139,9 +143,8 @@ connecting(enter, _OldState, #{reconnect_delay_ms := Timeout,
                                connect_fun := ConnectFun} = State) ->
     case ConnectFun() of
         {ok, ConnRef, Conn} ->
-            {next_state, connected, State#{conn_ref => ConnRef,
-                                           connection => Conn
-                                          }};
+            Action = {state_timeout, 0, connected},
+            {keep_state, State#{conn_ref => ConnRef, connection => Conn}, Action};
         error ->
             Action = {state_timeout, Timeout, reconnect},
             {keep_state, State, Action}

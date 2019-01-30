@@ -34,7 +34,7 @@
 
 -define(HEARTBEAT_INTERVAL, timer:seconds(1)).
 
-start(#{remote := Remote}) ->
+start(#{address := Remote}) ->
     case poke(Remote) of
         ok ->
             Pid = proc_lib:spawn_link(?MODULE, heartbeat, [self(), Remote]),
@@ -71,7 +71,7 @@ handle_send(SenderPid, Batch) ->
     SenderNode = node(SenderPid),
     Ref = make_ref(),
     AckFun = fun() -> gen_rpc:cast(SenderNode, ?MODULE, handle_ack, [SenderPid, Ref]), ok end,
-    case emqx_portal:import(Batch, AckFun) of
+    case emqx_portal:import_batch(Batch, AckFun) of
         ok -> {ok, Ref};
         Error -> Error
     end.
