@@ -1658,9 +1658,9 @@ end}.
                       Subs = Subscriptions(Name),
                       case string:tokens(Addr, "@") of
                           [_NodeName, _Hostname] when Subs =/= [] ->
-                              error("{subscriptions are not supported when bridging between emqx nodes", Name, Subs});
+                              error({"subscriptions are not supported when bridging between emqx nodes", Name, Subs});
                           [_NodeName, _hostname] ->
-                              emqx_portal_rpc
+                              emqx_portal_rpc;
                            _ ->
                               emqx_portal_mqtt
                       end
@@ -1668,7 +1668,7 @@ end}.
     %% to be backward compatible
     Translate =
         fun Tr(queue, Q, Cfg) ->
-                NewQ = maps:fold(F, #{}, Q),
+                NewQ = maps:fold(Tr, #{}, Q),
                 Cfg#{queue => NewQ};
             Tr(batch_size, Count, Cfg) ->
                 Cfg#{batch_count_limit => Count};
@@ -1686,11 +1686,11 @@ end}.
                 Init = [{list_to_atom(Opt), Val},
                         {connect_module, ConnMod(Name)},
                         {subscriptions, Subscriptions(Name)},
-                        {queue, Queue(Name)},
+                        {queue, Queue(Name)}
                        ],
                 C = maps:update_with(list_to_atom(Name),
                                      fun(Opts) -> Merge(list_to_atom(Opt), Val, Opts) end, Init, Acc),
-                maps:fold(Translate, #{}, C)
+                maps:fold(Translate, #{}, C);
            (_, Acc) -> Acc
         end, #{}, lists:usort(cuttlefish_variable:filter_by_prefix("bridge.", Conf))))
 end}.

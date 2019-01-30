@@ -80,8 +80,10 @@
 %%      each send call towards eqmx_portal_connect
 %% queue.replayq_dir: Directory where replayq should persist messages
 %% queue.replayq_seg_bytes: Size in bytes for each replqyq segnment file
+start_link(Name, Config) when is_list(Config) ->
+    start_link(Name, maps:from_list(Config));
 start_link(Name, Config) ->
-    gen_statem:start_link({local, Name}, ?MODULE, Config).
+    gen_statem:start_link({local, Name}, ?MODULE, Config, []).
 
 callback_mode() -> [state_functions, state_enter].
 

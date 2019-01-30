@@ -15,7 +15,7 @@
 -module(emqx_portal_sup).
 -behavior(supervisor).
 
--export([start_link/0]).
+-export([start_link/0, start_link/1]).
 
 -export([init/1]).
 
