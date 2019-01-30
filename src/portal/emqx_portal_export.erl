@@ -41,7 +41,7 @@
 -behaviour(gen_statem).
 
 %% APIs
--export([start_link/2]).
+-export([start_link/2, ack/2]).
 
 %% gen_statem callbacks
 -export([terminate/3, code_change/4, init/1, callback_mode/0]).
@@ -87,6 +87,10 @@ start_link(Name, Config) when is_list(Config) ->
     start_link(Name, maps:from_list(Config));
 start_link(Name, Config) ->
     gen_statem:start_link({local, Name}, ?MODULE, Config, []).
+
+ack(Pid, Ref) ->
+    Pid ! {batch_ack, Ref},
+    ok.
 
 callback_mode() -> [state_functions, state_enter].
 
@@ -149,9 +153,18 @@ connecting(enter, _OldState, #{reconnect_delay_ms := Timeout,
             Action = {state_timeout, Timeout, reconnect},
             {keep_state, State, Action}
     end;
+connecting(state_timeout, connected, State) ->
+    {next_state, connected, State};
 connecting(state_timeout, reconnect, State) ->
     %% enter connecting state again to start state timer
     {next_state, connecting, State};
+connecting(info, {batch_ack, Ref}, State) ->
+    case do_ack(State, Ref) of
+        {ok, NewState} ->
+            {keep_state, NewState};
+        _ ->
+            keep_state_and_data
+    end;
 connecting(Type, Content, State) ->
     common(connecting, Type, Content, State).
 
@@ -159,10 +172,16 @@ connecting(Type, Content, State) ->
 connected(enter, _OldState, #{inflight := Inflight} = State) ->
     case retry_inflight(State#{inflight := []}, Inflight) of
         {ok, NewState} ->
-            {keep_state, NewState, ?keep_sending};
+            Action = {state_timeout, 0, success},
+            {keep_state, NewState, Action};
         {error, NewState} ->
-            {next_state, connecting, disconnect(NewState)}
+            Action = {state_timeout, 0, failure},
+            {keep_state, disconnect(NewState), Action}
     end;
+connected(state_timeout, failure, State) ->
+    {next_state, connecting, State};
+connected(state_timeout, success, State) ->
+    {keep_state, State, ?keep_sending};
 connected(internal, try_send, State) ->
     case pop_and_send(State) of
         {ok, NewState} ->
@@ -177,6 +196,16 @@ connected(info, {disconnected, ConnRef, Reason},
      State#{conn_ref := undefined,
             connection := undefined
            }};
+connected(info, {batch_ack, Ref}, State) ->
+    case do_ack(State, Ref) of
+        stale ->
+            keep_state_and_data;
+        bad_order ->
+            %% try re-connect then re-send
+            {next_state, connecting, disconnect(State)};
+        {ok, NewState} ->
+            {keep_state, NewState}
+    end;
 connected(Type, Content, State) ->
     common(connected, Type, Content, State).
 
@@ -239,6 +268,14 @@ do_send(State = #{inflight := Inflight}, QAckRef, [_ | _] = Batch) ->
         {error, Reason} ->
             ?INFO("Batch produce failed\n~p", [Reason]),
             {error, State}
+    end.
+
+do_ack(State = #{inflight := [#{send_ack_ref := Ref} | Rest]}, Ref) ->
+    {ok, State#{inflight := Ref}};
+do_ack(#{inflight := Inflight}, Ref) ->
+    case lists:any(fun(#{send_ack_ref := Ref0}) -> Ref0 =:= Ref end, Inflight) of
+        true -> bad_order;
+        false -> stale
     end.
 
 subscribe_local_topics(Topics) ->

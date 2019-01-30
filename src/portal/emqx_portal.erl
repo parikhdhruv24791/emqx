@@ -44,6 +44,5 @@ import_batch(Batch, AckFun) ->
 %% when message/batch is accepted by remote node.
 -spec handle_ack(ExportPid :: pid(), ref()) -> ok.
 handle_ack(ExportPid, Ref) when node() =:= node(ExportPid) ->
-    ExportPid ! {batch_ack, Ref},
-    ok.
+    ok = emqx_portal_export:ack(ExportPid, Ref).
 
